@@ -290,14 +290,14 @@ mod sqlx {
     }
 
     #[rocket::async_trait]
-    impl<D: sqlx::Database> crate::Pool for sqlx::Pool<D> {
+    impl crate::Pool for sqlx::Pool<sqlx::Sqlite> {
         type Error = Error<sqlx::Error>;
-
-        type Connection = sqlx::pool::PoolConnection<D>;
+        type Connection = sqlx::pool::PoolConnection<sqlx::Sqlite>;
 
         async fn init(figment: &Figment) -> Result<Self, Self::Error> {
             let config = figment.extract::<Config>()?;
-            let mut opts = config.url.parse::<Options<D>>().map_err(Error::Init)?;
+            let mut opts = config.url.parse::<sqlx::sqlite::SqliteConnectOptions>().map_err(Error::Init)?;
+
             specialize(&mut opts, &config);
 
             opts = opts.disable_statement_logging();
@@ -307,6 +307,12 @@ mod sqlx {
                         .log_slow_statements(level.into(), Duration::default());
                 }
             }
+
+            // Apply SQLite-specific options
+            opts = opts
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Wal)
+                .synchronous(sqlx::sqlite::SqliteSynchronous::Normal)
+                .pragma("temp_store", "MEMORY");
 
             sqlx::pool::PoolOptions::new()
                 .max_connections(config.max_connections as u32)
@@ -323,7 +329,7 @@ mod sqlx {
         }
 
         async fn close(&self) {
-            <sqlx::Pool<D>>::close(self).await;
+            <sqlx::Pool<sqlx::Sqlite>>::close(self).await;
         }
     }
 }
